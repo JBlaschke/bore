@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::auth::Authenticator;
 use crate::shared::{
     proxy, ClientMessage, Delimited, ServerMessage, CONTROL_PORT, NETWORK_TIMEOUT,
+    spawn_cmd
 };
 
 /// State structure for the client.
@@ -41,6 +42,7 @@ impl Client {
         to: &str,
         port: u16,
         secret: Option<&str>,
+        post_cmd: Option<&str>
     ) -> Result<Self> {
         let mut stream = Delimited::new(connect_with_timeout(to, CONTROL_PORT).await?);
         let auth = secret.map(Authenticator::new);
@@ -61,13 +63,21 @@ impl Client {
         info!(remote_port, "connected to server");
         info!("listening at {to}:{remote_port}");
 
+        match post_cmd {
+            Some(cmd_str) => {
+                spawn_cmd(cmd_str, remote_port)?;
+            }
+            None => {
+            }
+        };
+
         Ok(Client {
             conn: Some(stream),
             to: to.to_string(),
             local_host: local_host.to_string(),
-            local_port,
-            remote_port,
-            auth,
+            local_port: local_port,
+            remote_port: remote_port,
+            auth: auth,
         })
     }
 

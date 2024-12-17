@@ -8,8 +8,12 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::io::{self, AsyncRead, AsyncWrite};
 use tokio::time::timeout;
 use tokio_util::codec::{AnyDelimiterCodec, Framed, FramedParts};
-use tracing::trace;
+use tracing::{info, trace};
 use uuid::Uuid;
+
+use std::process::{Command, ChildStdout, Stdio};
+use std::io::{BufReader, BufRead};
+use std::thread;
 
 /// TCP port used for control connections with the server.
 pub const CONTROL_PORT: u16 = 7835;
@@ -110,5 +114,49 @@ where
         res = io::copy(&mut s1_read, &mut s2_write) => res,
         res = io::copy(&mut s2_read, &mut s1_write) => res,
     }?;
+    Ok(())
+}
+
+/// Spawns a process running the `cmd` string in a shell. The shell enviroment
+/// defines `BORE_PORT=port`.
+pub fn spawn_cmd(cmd: &str, port: u16) -> io::Result<()> {
+    let mut child = if cfg!(target_os = "windows") {
+        let port_spec = format!("set BORE_PORT={}", port);
+        Command::new("cmd")
+                .args([
+                    "/V",
+                    "/C",
+                    format!("{}&& {}", port_spec, cmd).as_str()
+                ])
+                .stdout(Stdio::piped())
+                .spawn()
+                .expect("failed to spawn")
+    } else {
+        let port_spec = format!("BORE_PORT={}", port);
+        Command::new("sh")
+                .arg("-c")
+                .arg(format!("{} && {}", port_spec, cmd))
+                .stdout(Stdio::piped())
+                .spawn()
+                .expect("failed to spawn")
+    };
+
+    // Wait for output
+    let child_stdout: ChildStdout;
+    loop {
+        match child.stdout.take() {
+            Some(data) => {
+                child_stdout = data;
+                break;
+            }
+            None => {thread::sleep(Duration::from_millis(1000));}
+        }
+    }
+
+    let reader = BufReader::new(child_stdout);
+    for line in reader.lines() {
+        info!("'{}' returned: '{}'", cmd, line.unwrap());
+    }
+
     Ok(())
 }

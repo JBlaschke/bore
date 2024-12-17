@@ -32,6 +32,10 @@ enum Command {
         /// Optional secret for authentication.
         #[clap(short, long, env = "BORE_SECRET", hide_env_values = true)]
         secret: Option<String>,
+
+        /// Optional comnand to run after sucessfully connecting to server.
+        #[clap(long, env = "BORE_CMD", hide_env_values = false)]
+        post_cmd: Option<String>,
     },
 
     /// Runs the remote proxy server.
@@ -59,8 +63,12 @@ async fn run(command: Command) -> Result<()> {
             to,
             port,
             secret,
+            post_cmd
         } => {
-            let client = Client::new(&local_host, local_port, &to, port, secret.as_deref()).await?;
+            let client = Client::new(
+                &local_host, local_port, &to, port, secret.as_deref(),
+                post_cmd.as_deref()
+            ).await?;
             client.listen().await?;
         }
         Command::Server {
